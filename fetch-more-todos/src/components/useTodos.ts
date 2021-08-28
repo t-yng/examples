@@ -1,42 +1,22 @@
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { PagerMeta, Todo } from "../type";
 import { useFetch } from "./useFetch";
 
 type State = {
-  [page: number]: Todo[];
-  pages: Set<number>;
-};
-
-type Action = {
-  type: "addTodos";
-  page: number;
   todos: Todo[];
+  currentPage: number;
+  hasMore: boolean;
 };
 
-const initialState: State = {
-  pages: new Set(),
-};
-
-const reducer = (state: State, action: Action) => {
-  switch (action.type) {
-    case "addTodos": {
-      state.pages.add(action.page);
-      return {
-        ...state,
-        [action.page]: action.todos,
-        pages: state.pages,
-      };
-    }
-    default: {
-      return state;
-    }
-  }
-};
-
+// Next.js の Fast Refresh で状態もリセットする
+// @see: https://nextjs.org/docs/basic-features/fast-refresh#tips
+// @refresh reset
 export const useTodos = () => {
-  const [page, setPage] = useState(1);
-  const [state, dispatch] = useReducer(reducer, initialState);
-  const [todos, setTodos] = useState<Todo[]>([]);
+  const [state, setState] = useState<State>({
+    todos: [],
+    currentPage: 1,
+    hasMore: false,
+  });
   const { data, loading, doFetch } = useFetch<{
     todos: Todo[];
     meta: PagerMeta;
@@ -44,44 +24,32 @@ export const useTodos = () => {
     const result = await fetch(`http://localhost:3000/api/todos?page=${page}`);
     return result.json();
   });
-  const [hasMore, setHasMore] = useState(true);
+
+  console.log("hoge");
 
   useEffect(() => {
-    if (state == null) return;
-
-    const todos = Array.from(state.pages).reduce<Todo[]>((acc, page) => {
-      return acc.concat(state[page]);
-    }, []);
-
-    setTodos(todos);
-  }, [state]);
-
-  useEffect(() => {
-    doFetch(page);
-  }, [page, doFetch]);
+    doFetch(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (data != null) {
-      dispatch({
-        type: "addTodos",
-        page: data.meta.currentPage,
-        todos: data.todos,
-      });
-
-      console.log(data.meta);
-      console.log(data.meta.currentPage < data.meta.totalPages);
-      setHasMore(data.meta.currentPage < data.meta.totalPages);
+      const hasMore = data.meta.nextPage > 0;
+      setState((state) => ({
+        currentPage: data.meta.currentPage,
+        hasMore: hasMore,
+        todos: [...state.todos, ...data.todos],
+      }));
     }
   }, [data]);
 
   const fetchMore = useCallback(() => {
-    setPage((page) => page + 1);
-  }, []);
+    doFetch(state.currentPage + 1);
+  }, [doFetch, state.currentPage]);
 
   return {
-    todos,
+    state,
     fetchMore,
     loading,
-    hasMore,
   };
 };
